@@ -116,12 +116,15 @@
 
 <script>
 // Browser port of app/menu_bot.py, used by the static demo page (no server needed).
-// Keep the two in sync: tests/static_demo.test.js runs the same cases as tests/test_menu_bot.py.
+// Keep the two in sync: tests/test_parity.py replays thousands of conversations through
+// both and requires identical replies.
 
 (function (root) {
   "use strict";
 
   const MENU_NUMBERS = new Set(["1", "2", "3", "4", "5", "6", "7"]);
+  const NUMBER_INTENTS = { "1": "timings", "2": "fees", "3": "doctors", "4": "location",
+    "5": "appointment", "6": "payment", "7": "staff" };
 
   const MENU = (
     "Neeche se number likh kar bhejein 👇\n\n" +
@@ -136,7 +139,8 @@
 
   const KEYWORDS = {
     emergency: ["emergency", "khoon", "bleeding", "saans lene", "accident", "behosh", "ایمرجنسی", "خون"],
-    appointment: ["appointment", "appoinment", "appointmnt", "book", "booking", "milna", "dikhana", "اپائنٹمنٹ", "ملنا", "دکھانا"],
+    appointment: ["appointment", "appoinment", "appointmnt", "book", "booking", "milna", "dikhana",
+      "اپائنٹمنٹ", "ملنا", "دکھانا"],
     symptom: ["dard", "pain", "sujan", "swelling", "takleef", "masla", "problem", "hilta", "toot",
       "toota", "kida", "keera", "infection", "درد", "تکلیف", "سوجن"],
     fees: ["fee", "fees", "price", "prices", "charges", "charge", "rate", "rates", "cost", "kharcha",
@@ -146,9 +150,11 @@
       "jumma", "friday", "ramzan", "اوقات", "وقت", "ٹائم", "کب", "کھلا", "بند"],
     doctors: ["doctor", "doctors", "dr", "daktar", "specialist", "dentist", "orthodontist", "ڈاکٹر"],
     location: ["location", "address", "kahan", "kahaan", "kidhar", "map", "maps", "pata", "jagah",
-      "rasta", "direction", "directions", "contact", "number", "phone", "call", "کہاں", "پتہ", "پتا", "ایڈریس"],
+      "rasta", "direction", "directions", "contact", "number", "phone", "call",
+      "کہاں", "پتہ", "پتا", "ایڈریس"],
     payment: ["payment", "jazzcash", "easypaisa", "card", "cash", "bank", "parking", "ادائیگی"],
-    staff: ["staff", "human", "insaan", "receptionist", "complaint", "shikayat", "report", "reports", "baat", "شکایت", "رپورٹ"],
+    staff: ["staff", "human", "insaan", "receptionist", "complaint", "shikayat", "report", "reports",
+      "baat", "شکایت", "رپورٹ"],
     greeting: ["hi", "hello", "hey", "salam", "salaam", "aoa", "assalam", "assalamualaikum", "menu",
       "start", "help", "سلام", "مینو"],
   };
@@ -156,6 +162,18 @@
   const CANCEL_WORDS = new Set(["menu", "cancel", "stop", "wapas", "back", "مینو"]);
   const YES_WORDS = ["1", "haan", "han", "ha", "ji", "jee", "yes", "ok", "okay", "theek", "hanji", "ہاں", "جی"];
   const NO_WORDS = ["2", "nahi", "nahin", "no", "dobara", "نہیں"];
+
+  const QUESTION_WORDS = ["kya", "kitni", "kitna", "kitne", "kab", "kahan", "kahaan", "kidhar", "kaise", "kaun",
+    "konsa", "kon", "what", "when", "where", "how", "which", "khula", "khulta", "open",
+    "کیا", "کتنی", "کتنا", "کب", "کہاں", "کون", "کھلا"];
+  const DAY_ANSWER_WORDS = ["kal", "parson", "aaj", "abhi", "tareekh", "tarikh", "date", "agle", "agla", "aglay",
+    "next", "tomorrow", "today", "week", "hafte", "mahine",
+    "کل", "پرسوں", "آج", "تاریخ"];
+  const TIME_ANSWER_WORDS = ["subah", "sobah", "shaam", "sham", "dopahar", "dopehar", "raat", "baje", "bje", "am",
+    "pm", "morning", "evening", "afternoon", "night", "jaldi", "abhi", "time", "waqt",
+    "صبح", "شام", "دوپہر", "رات", "بجے"];
+  const DOCTOR_ANSWER_WORDS = ["koi", "kisi", "any", "anyone", "female", "male", "lady", "کوئی"];
+
   const SERVICE_STOPWORDS = new Set(["and", "per", "the", "teeth", "tooth", "from", "starting", "exact", "after"]);
 
   const DAY_ALIASES = {
@@ -167,11 +185,12 @@
     saturday: ["saturday", "sat", "hafta", "ہفتہ"],
     sunday: ["sunday", "itwar", "itwaar", "اتوار"],
   };
+  const ALL_DAY_WORDS = [].concat(...Object.values(DAY_ALIASES));
 
   const APPOINTMENT_STEPS = ["patient_name", "preferred_day", "preferred_time", "doctor", "problem"];
 
   const QUESTIONS = {
-    patient_name: "📝 Appointment request\n\nPatient ka *naam* likhein.\n(Kisi bhi waqt rokne ke liye *menu* likhein.)",
+    patient_name: "Patient ka *naam* likhein.",
     preferred_day: "Kis *din* aana chahenge? (maslan: kal, Monday, 15 tareekh)",
     preferred_time: "Kis *waqt*? Subah ya shaam, ya koi khaas time likhein.",
     problem: "Masla *ek line* mein batayein (maslan: daant mein dard, safai, braces).",
@@ -181,11 +200,12 @@
     return Object.assign({ reply: reply, action: action || "none", appointment: {}, handoff_reason: "" }, extra || {});
   }
 
+  // Matches Python's normalize(): Urdu digits -> 0-9, lowercase, punctuation -> space.
   function normalize(text) {
     text = text.replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0))
                .replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660))
                .toLowerCase();
-    text = text.replace(/[^\p{L}\p{N}\p{M}_\s]/gu, " ");
+    text = text.replace(/[^\p{L}\p{N}_\s]/gu, " ");
     return text.replace(/\s+/g, " ").trim();
   }
 
@@ -198,61 +218,45 @@
     return words.some(w => (w.includes(" ") ? text.includes(w) : toks.has(w)));
   }
 
+  function hasDigit(text) {
+    return /[0-9]/.test(text);
+  }
+
+  function isDigits(text) {
+    return /^[0-9]+$/.test(text);
+  }
+
+  // Slice by characters (code points) like Python, so emoji aren't cut in half.
+  function clip(text) {
+    return Array.from(text).slice(0, 200).join("");
+  }
+
+  function clear(state) {
+    for (const k of Object.keys(state)) delete state[k];
+  }
+
   function reply(clinic, state, message) {
     const text = normalize(message);
-
-    if (state.step) {
-      if (CANCEL_WORDS.has(text)) {
-        clear(state);
-        return result("Theek hai, appointment request cancel kar di. 👍\n\n" + MENU);
-      }
-      return appointmentStep(clinic, state, message.trim(), text);
-    }
+    if (state.step) return appointmentStep(clinic, state, message.trim(), text);
 
     const intent = detectIntent(clinic, text);
-    if (intent !== "unknown") state.unknown_count = 0;
-
-    if (intent === "emergency") {
-      return result(
-        "⚠️ Agar bohat zyada khoon beh raha hai, sujan se saans lene mein mushkil hai, ya chot " +
-        "serious hai to *foran Rescue 1122 call karein* ya qareebi hospital emergency jayein.\n\n" +
-        "Hamara staff bhi aap se jald rabta karega.",
-        "handoff", { handoff_reason: "Possible emergency" });
+    if (intent === "unknown") {
+      state.unknown_count = (state.unknown_count || 0) + 1;
+      if (state.unknown_count >= 2) {
+        state.unknown_count = 0;
+        return result("Maazrat, main yeh samajh nahi saka. Main aap ka sawal staff ko bhej raha hoon, woh jald reply karenge. 🙏",
+          "handoff", { handoff_reason: "Bot could not understand the patient" });
+      }
+      return result("Maazrat, main samajh nahi saka. 🙏\n\n" + MENU);
     }
+
+    state.unknown_count = 0;
     if (intent === "appointment") return startAppointment(state);
-    if (intent === "symptom") {
-      return result(
-        "Aap ki takleef ka sun kar afsos hua. 🙏 Doctor sahib check kar ke hi sahi bata sakte hain, " +
-        "is liye main dawai ya ilaaj nahi bata sakta.\n\n" +
-        "Appointment request ke liye *5* likhein.\n" +
-        "Agar bohat zyada dard, khoon ya sujan hai to foran qareebi emergency jayein ya Rescue 1122 call karein.");
-    }
-    if (intent.startsWith("service:")) return result(servicePrice(clinic, Number(intent.split(":")[1])));
-    if (intent === "fees") return result(fees(clinic));
-    if (intent === "timings") return result(timings(clinic));
-    if (intent === "doctors") return result(doctors(clinic));
-    if (intent === "location") return result(location(clinic));
-    if (intent === "payment") return result(otherInfo(clinic));
-    if (intent === "staff") {
-      return result("Ji zaroor. Hamara staff aap ko jald yahin WhatsApp par reply karega. 🙏",
-        "handoff", { handoff_reason: "Patient asked for staff" });
-    }
-    if (intent === "greeting") {
-      return result("Assalam o Alaikum! 👋 *" + clinic.name + "* mein khush aamdeed.\n\n" + MENU);
-    }
-
-    state.unknown_count = (state.unknown_count || 0) + 1;
-    if (state.unknown_count >= 2) {
-      state.unknown_count = 0;
-      return result("Maazrat, main yeh samajh nahi saka. Main aap ka sawal staff ko bhej raha hoon, woh jald reply karenge. 🙏",
-        "handoff", { handoff_reason: "Bot could not understand the patient" });
-    }
-    return result("Maazrat, main samajh nahi saka. 🙏\n\n" + MENU);
+    return answer(clinic, intent, text);
   }
 
   function detectIntent(clinic, text) {
-    const numbers = { "1": "timings", "2": "fees", "3": "doctors", "4": "location", "5": "appointment", "6": "payment", "7": "staff" };
-    if (MENU_NUMBERS.has(text)) return numbers[text];
+    if (MENU_NUMBERS.has(text)) return NUMBER_INTENTS[text];
     if (!text) return "unknown";
     for (const intent of ["emergency", "appointment"]) {
       if (hasAny(text, KEYWORDS[intent])) return intent;
@@ -282,6 +286,38 @@
     const toks = tokens(text);
     return (clinic.doctors || []).some(doctor =>
       normalize(doctor.name).split(" ").some(w => w !== "dr" && w !== "doctor" && w.length > 2 && toks.has(w)));
+  }
+
+  function answer(clinic, intent, text) {
+    if (intent === "emergency") {
+      return result(
+        "⚠️ Agar bohat zyada khoon beh raha hai, sujan se saans lene mein mushkil hai, ya chot " +
+        "serious hai to *foran Rescue 1122 call karein* ya qareebi hospital emergency jayein.\n\n" +
+        "Hamara staff bhi aap se jald rabta karega.",
+        "handoff", { handoff_reason: "Possible emergency" });
+    }
+    if (intent === "symptom") {
+      return result(
+        "Aap ki takleef ka sun kar afsos hua. 🙏 Doctor sahib check kar ke hi sahi bata sakte hain, " +
+        "is liye main dawai ya ilaaj nahi bata sakta.\n\n" +
+        "Appointment request ke liye *5* likhein.\n" +
+        "Agar bohat zyada dard, khoon ya sujan hai to foran qareebi emergency jayein ya Rescue 1122 call karein.");
+    }
+    if (intent.startsWith("service:")) return result(servicePrice(clinic, Number(intent.split(":")[1])));
+    if (intent === "fees") return result(fees(clinic));
+    if (intent === "timings") {
+      const closedDay = closedDayMentioned(clinic, text);
+      const prefix = closedDay ? "Nahi, " + closedDay + " ko clinic band hota hai.\n\n" : "";
+      return result(prefix + timings(clinic));
+    }
+    if (intent === "doctors") return result(doctors(clinic));
+    if (intent === "location") return result(location(clinic));
+    if (intent === "payment") return result(otherInfo(clinic));
+    if (intent === "staff") {
+      return result("Ji zaroor. Hamara staff aap ko jald yahin WhatsApp par reply karega. 🙏",
+        "handoff", { handoff_reason: "Patient asked for staff" });
+    }
+    return result("Assalam o Alaikum! 👋 *" + clinic.name + "* mein khush aamdeed.\n\n" + MENU);
   }
 
   // ---------- Answers built from the clinic data ----------
@@ -340,17 +376,22 @@
     return lines.join("\n");
   }
 
-  // ---------- Appointment form ----------
-
-  function clear(state) {
-    for (const k of Object.keys(state)) delete state[k];
+  function closedDayMentioned(clinic, text) {
+    const closed = ((clinic.timings && clinic.timings.closed) || "").toLowerCase();
+    for (const [day, aliases] of Object.entries(DAY_ALIASES)) {
+      if (closed.includes(day) && hasAny(text, aliases)) return day.charAt(0).toUpperCase() + day.slice(1);
+    }
+    return null;
   }
+
+  // ---------- Appointment form ----------
 
   function startAppointment(state) {
     clear(state);
     state.step = "patient_name";
     state.appointment = {};
-    return result(QUESTIONS.patient_name);
+    return result("📝 *Appointment request*\n\n" + QUESTIONS.patient_name +
+      "\n(Kisi bhi waqt rokne ke liye *menu* likhein.)");
   }
 
   function doctorQuestion(clinic) {
@@ -360,17 +401,82 @@
     return lines.join("\n");
   }
 
-  function closedDayMentioned(clinic, text) {
-    const closed = ((clinic.timings && clinic.timings.closed) || "").toLowerCase();
-    for (const [day, aliases] of Object.entries(DAY_ALIASES)) {
-      if (closed.includes(day) && hasAny(text, aliases)) return day.charAt(0).toUpperCase() + day.slice(1);
+  function currentQuestion(clinic, state) {
+    if (state.step === "confirm") return "Request bhejne ke liye *1*, cancel karne ke liye *2* likhein.";
+    if (state.step === "doctor") return doctorQuestion(clinic);
+    return QUESTIONS[state.step];
+  }
+
+  function summary(appt) {
+    return "Yeh details theek hain?\n\n" +
+      "👤 Naam: " + (appt.patient_name || "") + "\n" +
+      "🗓️ Din: " + (appt.preferred_day || "") + "\n" +
+      "🕘 Waqt: " + (appt.preferred_time || "") + "\n" +
+      "👩‍⚕️ Doctor: " + (appt.doctor || "Any") + "\n" +
+      "📝 Masla: " + (appt.problem || "") + "\n\n" +
+      "1️⃣ Haan, request bhej dein\n2️⃣ Nahi, cancel karein";
+  }
+
+  function isQuestion(raw, text) {
+    return raw.includes("?") || raw.includes("؟") || hasAny(text, QUESTION_WORDS);
+  }
+
+  // If a message sent during the form is really a question, return its intent; else null (it's an answer).
+  function formInterruption(clinic, step, raw, text) {
+    const intent = detectIntent(clinic, text);
+    if (intent === "unknown") return null;
+    if (intent === "emergency") return intent;
+    const question = isQuestion(raw, text);
+
+    if (step === "patient_name") {
+      // Names can look like keywords (Ramzan, Jumma, Usman, Ayesha), so only clear signals interrupt.
+      if (question || ["fees", "location", "payment", "staff", "greeting", "symptom", "appointment"].includes(intent) ||
+          intent.startsWith("service:")) return intent;
+      return null;
     }
-    return null;
+    if (step === "preferred_day") {
+      if (!question && (hasDigit(text) || hasAny(text, DAY_ANSWER_WORDS.concat(ALL_DAY_WORDS)))) return null;
+      if (closedDayMentioned(clinic, text)) return null;
+      return intent;
+    }
+    if (step === "preferred_time") {
+      if (!question && (hasDigit(text) || hasAny(text, TIME_ANSWER_WORDS))) return null;
+      return intent;
+    }
+    if (step === "doctor") {
+      if (!question && (hasDigit(text) || mentionsDoctor(clinic, text) || hasAny(text, DOCTOR_ANSWER_WORDS))) return null;
+      return intent;
+    }
+    if (step === "problem") {
+      if (intent === "symptom" || (intent === "doctors" && !question)) return null;
+      if (intent.startsWith("service:") && !(question || hasAny(text, KEYWORDS.fees))) return null;
+      return intent;
+    }
+    return intent;  // confirm step
+  }
+
+  function answerDuringForm(clinic, state, intent, text) {
+    if (intent === "appointment") {
+      return result("📝 *Appointment request jaari hai.*\n\n" + currentQuestion(clinic, state));
+    }
+    const r = answer(clinic, intent, text);
+    if (r.action === "handoff") {
+      clear(state);
+      return r;
+    }
+    r.reply += "\n\n———\n📝 *Appointment request jaari hai.*\n" + currentQuestion(clinic, state) +
+      "\n(Rokne ke liye *menu* likhein.)";
+    return r;
   }
 
   function appointmentStep(clinic, state, raw, text) {
     const step = state.step;
     const appt = state.appointment;
+
+    if (CANCEL_WORDS.has(text)) {
+      clear(state);
+      return result("Theek hai, appointment request cancel kar di. 👍\n\n" + MENU);
+    }
 
     if (step === "confirm") {
       if (NO_WORDS.includes(text) || hasAny(text, NO_WORDS.filter(w => w !== "2"))) {
@@ -385,21 +491,27 @@
           "Kuch aur poochna ho to *menu* likhein.",
           "appointment_request", { appointment: appt });
       }
-      return result("Barah-e-karam *1* (haan, bhej dein) ya *2* (cancel karein) likhein.");
     }
 
-    if (!text) return result("Barah-e-karam jawab likh kar bhejein.");
+    if (!text) return result("Barah-e-karam jawab likh kar bhejein.\n\n" + currentQuestion(clinic, state));
 
-    // A bare menu number always means that menu option (except a valid doctor number on the
-    // doctor question), so a patient who forgets they're in the form isn't stuck in it.
     const docs = clinic.doctors || [];
-    const isDoctorChoice = step === "doctor" && /^\d+$/.test(text) && Number(text) <= docs.length;
+    const isDoctorChoice = step === "doctor" && isDigits(text) && Number(text) <= docs.length;
     if (MENU_NUMBERS.has(text) && !isDoctorChoice) {
+      if (text === "5") return answerDuringForm(clinic, state, "appointment", text);
       clear(state);
-      const answer = reply(clinic, state, text);
-      answer.reply = "Appointment request cancel kar di.\n\n" + answer.reply;
-      return answer;
+      const r = reply(clinic, state, text);
+      r.reply = "Appointment request cancel kar di.\n\n" + r.reply;
+      return r;
     }
+
+    if (step === "doctor" && isDigits(text) && !isDoctorChoice) {
+      return result("Yeh number list mein nahi hai.\n\n" + doctorQuestion(clinic));
+    }
+
+    const intent = isDoctorChoice ? null : formInterruption(clinic, step, raw, text);
+    if (intent) return answerDuringForm(clinic, state, intent, text);
+    if (step === "confirm") return result("Barah-e-karam *1* (haan, bhej dein) ya *2* (cancel karein) likhein.");
 
     if (step === "preferred_day") {
       const closedDay = closedDayMentioned(clinic, text);
@@ -407,31 +519,20 @@
     }
 
     if (step === "doctor") {
-      if (isDoctorChoice) {
-        appt.doctor = text === "0" ? "Any" : docs[Number(text) - 1].name;
-      } else {
-        appt.doctor = raw;
-      }
+      appt.doctor = isDoctorChoice ? (text === "0" ? "Any" : docs[Number(text) - 1].name) : clip(raw);
     } else {
-      appt[step] = raw.slice(0, 200);
+      appt[step] = clip(raw);
     }
 
     let next = APPOINTMENT_STEPS.indexOf(step) + 1;
-    if (step === "preferred_time" && !(clinic.doctors || []).length) next += 1;
+    if (step === "preferred_time" && !docs.length) next += 1;
     if (next < APPOINTMENT_STEPS.length) {
       state.step = APPOINTMENT_STEPS[next];
-      return result(state.step === "doctor" ? doctorQuestion(clinic) : QUESTIONS[state.step]);
+      return result(currentQuestion(clinic, state));
     }
 
     state.step = "confirm";
-    return result(
-      "Yeh details theek hain?\n\n" +
-      "👤 Naam: " + (appt.patient_name || "") + "\n" +
-      "🗓️ Din: " + (appt.preferred_day || "") + "\n" +
-      "🕘 Waqt: " + (appt.preferred_time || "") + "\n" +
-      "👩‍⚕️ Doctor: " + (appt.doctor || "Any") + "\n" +
-      "📝 Masla: " + (appt.problem || "") + "\n\n" +
-      "1️⃣ Haan, request bhej dein\n2️⃣ Nahi, cancel karein");
+    return result(summary(appt));
   }
 
   const api = { reply: reply, normalize: normalize };
@@ -516,26 +617,36 @@
     }
   }
 
+  // Replies are shown one after another, so quick taps are all answered, in order.
+  let queue = Promise.resolve();
+  let pending = 0;
+  let chatId = 0;  // bumped by "New chat" so replies from the old chat aren't shown in the new one
+
   function botReply(text, silent) {
     text = text.trim();
-    if (!text || send.disabled) return;
+    if (!text) return;
     if (!silent) addMessage(text, "out");
     input.value = "";
-    send.disabled = true;
-    statusEl.textContent = "typing…";
     const result = MenuBot.reply(CLINIC, state, text);
-    // A short pause so it feels like a real chat.
-    setTimeout(() => {
-      addMessage(result.reply, "in");
-      if (result.action === "appointment_request") {
-        saveRequest(result.appointment);
-        addNotice("📋 Appointment request saved — receptionist gets a WhatsApp alert");
-      } else if (result.action === "handoff") {
-        addNotice("🙋 Sent to clinic staff for a personal reply");
-      }
-      send.disabled = false;
-      statusEl.textContent = "online";
-    }, silent ? 0 : 600);
+    const myChat = chatId;
+    pending++;
+    statusEl.textContent = "typing…";
+    queue = queue.then(() => new Promise(resolve => {
+      const done = () => { if (--pending === 0) statusEl.textContent = "online"; };
+      // A short pause so it feels like a real chat.
+      setTimeout(() => {
+        if (myChat !== chatId) { done(); resolve(); return; }
+        addMessage(result.reply, "in");
+        if (result.action === "appointment_request") {
+          saveRequest(result.appointment);
+          addNotice("📋 Appointment request saved — receptionist gets a WhatsApp alert");
+        } else if (result.action === "handoff") {
+          addNotice("🙋 Sent to clinic staff for a personal reply");
+        }
+        done();
+        resolve();
+      }, silent ? 0 : 600);
+    }));
   }
 
   document.getElementById("form").addEventListener("submit", e => {
@@ -545,6 +656,7 @@
   document.querySelectorAll("#chips button").forEach(b => b.addEventListener("click", () => botReply(b.textContent)));
 
   document.getElementById("reset").addEventListener("click", () => {
+    chatId++;
     state = {};
     chat.innerHTML = "";
     document.body.classList.remove("show-requests");
