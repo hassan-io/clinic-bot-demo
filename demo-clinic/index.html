@@ -121,6 +121,8 @@
 (function (root) {
   "use strict";
 
+  const MENU_NUMBERS = new Set(["1", "2", "3", "4", "5", "6", "7"]);
+
   const MENU = (
     "Neeche se number likh kar bhejein 👇\n\n" +
     "1️⃣ Timings (Auqaat)\n" +
@@ -250,7 +252,7 @@
 
   function detectIntent(clinic, text) {
     const numbers = { "1": "timings", "2": "fees", "3": "doctors", "4": "location", "5": "appointment", "6": "payment", "7": "staff" };
-    if (numbers[text]) return numbers[text];
+    if (MENU_NUMBERS.has(text)) return numbers[text];
     if (!text) return "unknown";
     for (const intent of ["emergency", "appointment"]) {
       if (hasAny(text, KEYWORDS[intent])) return intent;
@@ -371,7 +373,10 @@
     const appt = state.appointment;
 
     if (step === "confirm") {
-      if (NO_WORDS.includes(text) || hasAny(text, NO_WORDS.filter(w => w !== "2"))) return startAppointment(state);
+      if (NO_WORDS.includes(text) || hasAny(text, NO_WORDS.filter(w => w !== "2"))) {
+        clear(state);
+        return result("Theek hai, appointment request cancel kar di. 👍\n\n" + MENU);
+      }
       if (YES_WORDS.includes(text) || hasAny(text, YES_WORDS.filter(w => w !== "1"))) {
         clear(state);
         return result(
@@ -380,10 +385,21 @@
           "Kuch aur poochna ho to *menu* likhein.",
           "appointment_request", { appointment: appt });
       }
-      return result("Barah-e-karam *1* (haan, bhej dein) ya *2* (dobara shuru karein) likhein.");
+      return result("Barah-e-karam *1* (haan, bhej dein) ya *2* (cancel karein) likhein.");
     }
 
     if (!text) return result("Barah-e-karam jawab likh kar bhejein.");
+
+    // A bare menu number always means that menu option (except a valid doctor number on the
+    // doctor question), so a patient who forgets they're in the form isn't stuck in it.
+    const docs = clinic.doctors || [];
+    const isDoctorChoice = step === "doctor" && /^\d+$/.test(text) && Number(text) <= docs.length;
+    if (MENU_NUMBERS.has(text) && !isDoctorChoice) {
+      clear(state);
+      const answer = reply(clinic, state, text);
+      answer.reply = "Appointment request cancel kar di.\n\n" + answer.reply;
+      return answer;
+    }
 
     if (step === "preferred_day") {
       const closedDay = closedDayMentioned(clinic, text);
@@ -391,8 +407,7 @@
     }
 
     if (step === "doctor") {
-      const docs = clinic.doctors || [];
-      if (/^\d+$/.test(text) && Number(text) <= docs.length) {
+      if (isDoctorChoice) {
         appt.doctor = text === "0" ? "Any" : docs[Number(text) - 1].name;
       } else {
         appt.doctor = raw;
@@ -416,7 +431,7 @@
       "🕘 Waqt: " + (appt.preferred_time || "") + "\n" +
       "👩‍⚕️ Doctor: " + (appt.doctor || "Any") + "\n" +
       "📝 Masla: " + (appt.problem || "") + "\n\n" +
-      "1️⃣ Haan, request bhej dein\n2️⃣ Nahi, dobara shuru karein");
+      "1️⃣ Haan, request bhej dein\n2️⃣ Nahi, cancel karein");
   }
 
   const api = { reply: reply, normalize: normalize };
