@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#075e54">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Clinic Bot">
+<title>Clinic Chat Demo</title>
+<style>
+  :root {
+    --header: #075e54; --header-text: #ffffff; --bg: #efeae2; --in: #ffffff; --out: #d9fdd3;
+    --text: #111b21; --muted: #667781; --accent: #00a884; --input-bg: #f0f2f5; --chip: #ffffff;
+    --notice: #fff3c4; --notice-text: #54471a; --card: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --header: #202c33; --header-text: #e9edef; --bg: #0b141a; --in: #202c33; --out: #005c4b;
+      --text: #e9edef; --muted: #8696a0; --input-bg: #202c33; --chip: #202c33;
+      --notice: #3b3417; --notice-text: #f3e6b0; --card: #202c33;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Nastaliq Urdu", sans-serif;
+    background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100dvh;
+  }
+  header {
+    background: var(--header); color: var(--header-text); padding: 10px 16px;
+    padding-top: max(10px, env(safe-area-inset-top));
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .avatar {
+    width: 40px; height: 40px; border-radius: 50%; background: var(--accent);
+    display: grid; place-items: center; font-weight: 700; font-size: 18px; color: #fff; flex-shrink: 0;
+  }
+  .title { flex: 1; min-width: 0; }
+  .title h1 { font-size: 16px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .title p { font-size: 12px; margin: 2px 0 0; opacity: .8; }
+  header button {
+    background: none; border: 1px solid currentColor; color: inherit; border-radius: 16px;
+    padding: 5px 10px; font-size: 13px; cursor: pointer; opacity: .85; white-space: nowrap;
+  }
+  #chat, #requests { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; }
+  #requests { display: none; gap: 10px; }
+  body.show-requests #requests { display: flex; }
+  body.show-requests #chat, body.show-requests #chips, body.show-requests form { display: none; }
+  .msg {
+    max-width: 82%; padding: 7px 10px 6px; border-radius: 8px; font-size: 15px; line-height: 1.4;
+    white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 1px .5px rgba(0,0,0,.13);
+  }
+  .msg time { display: block; text-align: right; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .in { background: var(--in); align-self: flex-start; border-top-left-radius: 0; }
+  .out { background: var(--out); align-self: flex-end; border-top-right-radius: 0; }
+  .notice {
+    align-self: center; background: var(--notice); color: var(--notice-text); font-size: 13px;
+    padding: 6px 12px; border-radius: 8px; text-align: center; max-width: 92%;
+  }
+  .card { background: var(--card); border-radius: 10px; padding: 12px 14px; font-size: 14px; line-height: 1.5;
+          box-shadow: 0 1px .5px rgba(0,0,0,.13); }
+  .card b { display: block; font-size: 15px; margin-bottom: 4px; }
+  .card .when { color: var(--muted); font-size: 12px; }
+  .empty { color: var(--muted); text-align: center; margin-top: 40px; font-size: 14px; }
+  .intro { color: var(--muted); font-size: 13px; margin: 0 0 4px; }
+  #chips { display: flex; gap: 8px; overflow-x: auto; padding: 0 16px 8px; flex-shrink: 0; }
+  #chips button {
+    background: var(--chip); color: var(--accent); border: 1px solid var(--accent); border-radius: 16px;
+    padding: 6px 12px; font-size: 13px; white-space: nowrap; cursor: pointer;
+  }
+  form {
+    display: flex; gap: 8px; padding: 8px 12px; background: var(--input-bg); flex-shrink: 0;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+  #input {
+    flex: 1; border: none; border-radius: 20px; padding: 10px 16px; font-size: 16px;
+    background: var(--bg); color: var(--text); outline: none; min-width: 0;
+  }
+  #send {
+    width: 44px; height: 44px; border-radius: 50%; border: none; background: var(--accent);
+    color: #fff; font-size: 18px; cursor: pointer; flex-shrink: 0;
+  }
+  #send:disabled { opacity: .5; }
+</style>
+</head>
+<body>
+<header>
+  <div class="avatar" id="avatar">C</div>
+  <div class="title">
+    <h1 id="clinic-name">Clinic</h1>
+    <p id="status">online</p>
+  </div>
+  <button type="button" id="toggle">📋 Requests</button>
+  <button type="button" id="reset">New chat</button>
+</header>
+
+<main id="chat" aria-live="polite"></main>
+
+<section id="requests" aria-label="Appointment requests"></section>
+
+<div id="chips">
+  <button type="button">Hi</button>
+  <button type="button">Checkup fee kitni hai?</button>
+  <button type="button">Appointment chahiye</button>
+  <button type="button">Daant mein bohat dard hai</button>
+  <button type="button">Root canal ki price?</button>
+  <button type="button">Sunday ko khula hai?</button>
+  <button type="button">کلینک کہاں ہے؟</button>
+</div>
+
+<form id="form">
+  <input id="input" autocomplete="off" placeholder="Type a message" maxlength="1000">
+  <button id="send" type="submit" aria-label="Send">➤</button>
+</form>
+
+<script>
+// Browser port of app/menu_bot.py, used by the static demo page (no server needed).
+// Keep the two in sync: tests/static_demo.test.js runs the same cases as tests/test_menu_bot.py.
+
+(function (root) {
+  "use strict";
+
+  const MENU = (
+    "Neeche se number likh kar bhejein 👇\n\n" +
+    "1️⃣ Timings (Auqaat)\n" +
+    "2️⃣ Fees & Charges\n" +
+    "3️⃣ Doctors\n" +
+    "4️⃣ Location (Pata)\n" +
+    "5️⃣ Appointment Request\n" +
+    "6️⃣ Payment & Other Info\n" +
+    "7️⃣ Staff se baat karein"
+  );
+
+  const KEYWORDS = {
+    emergency: ["emergency", "khoon", "bleeding", "saans lene", "accident", "behosh", "ایمرجنسی", "خون"],
+    appointment: ["appointment", "appoinment", "appointmnt", "book", "booking", "milna", "dikhana", "اپائنٹمنٹ", "ملنا", "دکھانا"],
+    symptom: ["dard", "pain", "sujan", "swelling", "takleef", "masla", "problem", "hilta", "toot",
+      "toota", "kida", "keera", "infection", "درد", "تکلیف", "سوجن"],
+    fees: ["fee", "fees", "price", "prices", "charges", "charge", "rate", "rates", "cost", "kharcha",
+      "paise", "paisay", "rupay", "rupees", "فیس", "قیمت", "پیسے", "خرچہ"],
+    timings: ["timing", "timings", "time", "waqt", "auqat", "auqaat", "khula", "khulta",
+      "open", "close", "closed", "band", "kab", "baje", "din", "days", "sunday", "itwar",
+      "jumma", "friday", "ramzan", "اوقات", "وقت", "ٹائم", "کب", "کھلا", "بند"],
+    doctors: ["doctor", "doctors", "dr", "daktar", "specialist", "dentist", "orthodontist", "ڈاکٹر"],
+    location: ["location", "address", "kahan", "kahaan", "kidhar", "map", "maps", "pata", "jagah",
+      "rasta", "direction", "directions", "contact", "number", "phone", "call", "کہاں", "پتہ", "پتا", "ایڈریس"],
+    payment: ["payment", "jazzcash", "easypaisa", "card", "cash", "bank", "parking", "ادائیگی"],
+    staff: ["staff", "human", "insaan", "receptionist", "complaint", "shikayat", "report", "reports", "baat", "شکایت", "رپورٹ"],
+    greeting: ["hi", "hello", "hey", "salam", "salaam", "aoa", "assalam", "assalamualaikum", "menu",
+      "start", "help", "سلام", "مینو"],
+  };
+
+  const CANCEL_WORDS = new Set(["menu", "cancel", "stop", "wapas", "back", "مینو"]);
+  const YES_WORDS = ["1", "haan", "han", "ha", "ji", "jee", "yes", "ok", "okay", "theek", "hanji", "ہاں", "جی"];
+  const NO_WORDS = ["2", "nahi", "nahin", "no", "dobara", "نہیں"];
+  const SERVICE_STOPWORDS = new Set(["and", "per", "the", "teeth", "tooth", "from", "starting", "exact", "after"]);
+
+  const DAY_ALIASES = {
+    monday: ["monday", "mon", "peer", "pir", "پیر"],
+    tuesday: ["tuesday", "tue", "mangal", "منگل"],
+    wednesday: ["wednesday", "wed", "budh", "بدھ"],
+    thursday: ["thursday", "thu", "jumerat", "jumeraat", "جمعرات"],
+    friday: ["friday", "fri", "jumma", "juma", "جمعہ"],
+    saturday: ["saturday", "sat", "hafta", "ہفتہ"],
+    sunday: ["sunday", "itwar", "itwaar", "اتوار"],
+  };
+
+  const APPOINTMENT_STEPS = ["patient_name", "preferred_day", "preferred_time", "doctor", "problem"];
+
+  const QUESTIONS = {
+    patient_name: "📝 Appointment request\n\nPatient ka *naam* likhein.\n(Kisi bhi waqt rokne ke liye *menu* likhein.)",
+    preferred_day: "Kis *din* aana chahenge? (maslan: kal, Monday, 15 tareekh)",
+    preferred_time: "Kis *waqt*? Subah ya shaam, ya koi khaas time likhein.",
+    problem: "Masla *ek line* mein batayein (maslan: daant mein dard, safai, braces).",
+  };
+
+  function result(reply, action, extra) {
+    return Object.assign({ reply: reply, action: action || "none", appointment: {}, handoff_reason: "" }, extra || {});
+  }
+
+  function normalize(text) {
+    text = text.replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0))
+               .replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660))
+               .toLowerCase();
+    text = text.replace(/[^\p{L}\p{N}\p{M}_\s]/gu, " ");
+    return text.replace(/\s+/g, " ").trim();
+  }
+
+  function tokens(text) {
+    return new Set(text.split(" ").filter(Boolean));
+  }
+
+  function hasAny(text, words) {
+    const toks = tokens(text);
+    return words.some(w => (w.includes(" ") ? text.includes(w) : toks.has(w)));
+  }
+
+  function reply(clinic, state, message) {
+    const text = normalize(message);
+
+    if (state.step) {
+      if (CANCEL_WORDS.has(text)) {
+        clear(state);
+        return result("Theek hai, appointment request cancel kar di. 👍\n\n" + MENU);
+      }
+      return appointmentStep(clinic, state, message.trim(), text);
+    }
+
+    const intent = detectIntent(clinic, text);
+    if (intent !== "unknown") state.unknown_count = 0;
+
+    if (intent === "emergency") {
+      return result(
+        "⚠️ Agar bohat zyada khoon beh raha hai, sujan se saans lene mein mushkil hai, ya chot " +
+        "serious hai to *foran Rescue 1122 call karein* ya qareebi hospital emergency jayein.\n\n" +
+        "Hamara staff bhi aap se jald rabta karega.",
+        "handoff", { handoff_reason: "Possible emergency" });
+    }
+    if (intent === "appointment") return startAppointment(state);
+    if (intent === "symptom") {
+      return result(
+        "Aap ki takleef ka sun kar afsos hua. 🙏 Doctor sahib check kar ke hi sahi bata sakte hain, " +
+        "is liye main dawai ya ilaaj nahi bata sakta.\n\n" +
+        "Appointment request ke liye *5* likhein.\n" +
+        "Agar bohat zyada dard, khoon ya sujan hai to foran qareebi emergency jayein ya Rescue 1122 call karein.");
+    }
+    if (intent.startsWith("service:")) return result(servicePrice(clinic, Number(intent.split(":")[1])));
+    if (intent === "fees") return result(fees(clinic));
+    if (intent === "timings") return result(timings(clinic));
+    if (intent === "doctors") return result(doctors(clinic));
+    if (intent === "location") return result(location(clinic));
+    if (intent === "payment") return result(otherInfo(clinic));
+    if (intent === "staff") {
+      return result("Ji zaroor. Hamara staff aap ko jald yahin WhatsApp par reply karega. 🙏",
+        "handoff", { handoff_reason: "Patient asked for staff" });
+    }
+    if (intent === "greeting") {
+      return result("Assalam o Alaikum! 👋 *" + clinic.name + "* mein khush aamdeed.\n\n" + MENU);
+    }
+
+    state.unknown_count = (state.unknown_count || 0) + 1;
+    if (state.unknown_count >= 2) {
+      state.unknown_count = 0;
+      return result("Maazrat, main yeh samajh nahi saka. Main aap ka sawal staff ko bhej raha hoon, woh jald reply karenge. 🙏",
+        "handoff", { handoff_reason: "Bot could not understand the patient" });
+    }
+    return result("Maazrat, main samajh nahi saka. 🙏\n\n" + MENU);
+  }
+
+  function detectIntent(clinic, text) {
+    const numbers = { "1": "timings", "2": "fees", "3": "doctors", "4": "location", "5": "appointment", "6": "payment", "7": "staff" };
+    if (numbers[text]) return numbers[text];
+    if (!text) return "unknown";
+    for (const intent of ["emergency", "appointment"]) {
+      if (hasAny(text, KEYWORDS[intent])) return intent;
+    }
+    const service = findService(clinic, text);
+    if (service !== null) return "service:" + service;
+    if (hasAny(text, KEYWORDS.symptom)) return "symptom";
+    if (mentionsDoctor(clinic, text)) return "doctors";
+    for (const intent of ["fees", "timings", "doctors", "location", "payment", "staff", "greeting"]) {
+      if (hasAny(text, KEYWORDS[intent])) return intent;
+    }
+    return "unknown";
+  }
+
+  function findService(clinic, text) {
+    const toks = tokens(text);
+    const services = (clinic.fees && clinic.fees.services) || [];
+    for (let i = 0; i < services.length; i++) {
+      const words = normalize(services[i].name).split(" ").filter(w => w.length > 2 && !SERVICE_STOPWORDS.has(w));
+      const aliases = (services[i].aliases || []).map(normalize);
+      if (words.some(w => toks.has(w)) || hasAny(text, aliases)) return i;
+    }
+    return null;
+  }
+
+  function mentionsDoctor(clinic, text) {
+    const toks = tokens(text);
+    return (clinic.doctors || []).some(doctor =>
+      normalize(doctor.name).split(" ").some(w => w !== "dr" && w !== "doctor" && w.length > 2 && toks.has(w)));
+  }
+
+  // ---------- Answers built from the clinic data ----------
+
+  function timings(clinic) {
+    const t = clinic.timings || {};
+    const lines = ["🕘 *" + clinic.name + " ki timings*"];
+    if (t.days_open) lines.push("Din: " + t.days_open);
+    if (t.morning) lines.push("Subah: " + t.morning);
+    if (t.evening) lines.push("Shaam: " + t.evening);
+    if (t.closed) lines.push("Band: " + t.closed);
+    for (const [key, value] of Object.entries(t)) {
+      if (!["days_open", "morning", "evening", "closed"].includes(key) && value) lines.push("• " + value);
+    }
+    return lines.join("\n") + "\n\nAppointment request ke liye *5* likhein.";
+  }
+
+  function fees(clinic) {
+    const f = clinic.fees || {};
+    const lines = ["💰 *Fees & Charges*"];
+    if (f.consultation) lines.push("Checkup / consultation: " + f.consultation);
+    for (const s of f.services || []) lines.push("• " + s.name + ": " + s.price);
+    lines.push("\nFinal kharcha doctor ke checkup ke baad tay hota hai.");
+    if (f.not_offered && f.not_offered.length) lines.push("Yeh services hamare paas nahi hain: " + f.not_offered.join(", "));
+    return lines.join("\n");
+  }
+
+  function servicePrice(clinic, index) {
+    const s = clinic.fees.services[index];
+    return "💰 *" + s.name + "*: " + s.price + "\n\n" +
+      "Final kharcha doctor ke checkup ke baad tay hota hai.\n" +
+      "Baqi charges dekhne ke liye *2*, appointment request ke liye *5* likhein.";
+  }
+
+  function doctors(clinic) {
+    const lines = ["👩‍⚕️ *Hamare Doctors*"];
+    for (const d of clinic.doctors || []) {
+      lines.push("\n*" + d.name + "*\n" + (d.specialty || "") + "\n🗓️ " + (d.schedule || ""));
+    }
+    return lines.join("\n") + "\n\nAppointment request ke liye *5* likhein.";
+  }
+
+  function location(clinic) {
+    const lines = ["📍 *" + clinic.name + "*", clinic.address || ""];
+    if (clinic.google_maps_link) lines.push("Google Maps: " + clinic.google_maps_link);
+    if (clinic.phone) lines.push("📞 " + clinic.phone);
+    return lines.filter(Boolean).join("\n");
+  }
+
+  function otherInfo(clinic) {
+    const lines = ["ℹ️ *Payment & Other Info*"];
+    if (clinic.payment_methods && clinic.payment_methods.length) lines.push("Payment: " + clinic.payment_methods.join(", "));
+    if (clinic.appointments && clinic.appointments.policy) lines.push(clinic.appointments.policy);
+    for (const item of clinic.other_info || []) lines.push("• " + item);
+    for (const faq of clinic.faqs || []) lines.push("• " + faq.q + " " + faq.a);
+    return lines.join("\n");
+  }
+
+  // ---------- Appointment form ----------
+
+  function clear(state) {
+    for (const k of Object.keys(state)) delete state[k];
+  }
+
+  function startAppointment(state) {
+    clear(state);
+    state.step = "patient_name";
+    state.appointment = {};
+    return result(QUESTIONS.patient_name);
+  }
+
+  function doctorQuestion(clinic) {
+    const lines = ["Kis *doctor* se milna chahenge? Number likhein:"];
+    (clinic.doctors || []).forEach((d, i) => lines.push((i + 1) + ". " + d.name + " (" + (d.specialty || "") + ")"));
+    lines.push("0. Koi bhi doctor");
+    return lines.join("\n");
+  }
+
+  function closedDayMentioned(clinic, text) {
+    const closed = ((clinic.timings && clinic.timings.closed) || "").toLowerCase();
+    for (const [day, aliases] of Object.entries(DAY_ALIASES)) {
+      if (closed.includes(day) && hasAny(text, aliases)) return day.charAt(0).toUpperCase() + day.slice(1);
+    }
+    return null;
+  }
+
+  function appointmentStep(clinic, state, raw, text) {
+    const step = state.step;
+    const appt = state.appointment;
+
+    if (step === "confirm") {
+      if (NO_WORDS.includes(text) || hasAny(text, NO_WORDS.filter(w => w !== "2"))) return startAppointment(state);
+      if (YES_WORDS.includes(text) || hasAny(text, YES_WORDS.filter(w => w !== "1"))) {
+        clear(state);
+        return result(
+          "✅ Shukriya! Aap ki appointment *request* clinic ko bhej di gayi hai.\n" +
+          "Clinic jald WhatsApp par time *confirm* karega.\n\n" +
+          "Kuch aur poochna ho to *menu* likhein.",
+          "appointment_request", { appointment: appt });
+      }
+      return result("Barah-e-karam *1* (haan, bhej dein) ya *2* (dobara shuru karein) likhein.");
+    }
+
+    if (!text) return result("Barah-e-karam jawab likh kar bhejein.");
+
+    if (step === "preferred_day") {
+      const closedDay = closedDayMentioned(clinic, text);
+      if (closedDay) return result("Maazrat, clinic " + closedDay + " ko band hota hai. Koi aur din likhein.");
+    }
+
+    if (step === "doctor") {
+      const docs = clinic.doctors || [];
+      if (/^\d+$/.test(text) && Number(text) <= docs.length) {
+        appt.doctor = text === "0" ? "Any" : docs[Number(text) - 1].name;
+      } else {
+        appt.doctor = raw;
+      }
+    } else {
+      appt[step] = raw.slice(0, 200);
+    }
+
+    let next = APPOINTMENT_STEPS.indexOf(step) + 1;
+    if (step === "preferred_time" && !(clinic.doctors || []).length) next += 1;
+    if (next < APPOINTMENT_STEPS.length) {
+      state.step = APPOINTMENT_STEPS[next];
+      return result(state.step === "doctor" ? doctorQuestion(clinic) : QUESTIONS[state.step]);
+    }
+
+    state.step = "confirm";
+    return result(
+      "Yeh details theek hain?\n\n" +
+      "👤 Naam: " + (appt.patient_name || "") + "\n" +
+      "🗓️ Din: " + (appt.preferred_day || "") + "\n" +
+      "🕘 Waqt: " + (appt.preferred_time || "") + "\n" +
+      "👩‍⚕️ Doctor: " + (appt.doctor || "Any") + "\n" +
+      "📝 Masla: " + (appt.problem || "") + "\n\n" +
+      "1️⃣ Haan, request bhej dein\n2️⃣ Nahi, dobara shuru karein");
+  }
+
+  const api = { reply: reply, normalize: normalize };
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  else root.MenuBot = api;
+})(this);
+
+</script>
+<script>
+  const CLINIC = {"slug": "demo-clinic", "name": "Faisalabad Dental Care (Demo)", "type": "Dental clinic", "address": "Susan Road, near Madina Town, Faisalabad", "google_maps_link": "https://maps.google.com/?q=Susan+Road+Faisalabad", "phone": "041-0000000", "timings": {"days_open": "Monday to Saturday", "morning": "10:00 AM - 2:00 PM", "evening": "5:00 PM - 9:00 PM", "closed": "Sunday", "friday_note": "Friday break 1:00 PM - 3:00 PM for Jumma prayer", "ramzan_note": "During Ramzan, timings are 11:00 AM - 3:00 PM and 9:30 PM - 12:00 AM"}, "doctors": [{"name": "Dr. Ayesha Khan", "specialty": "General dentist, BDS", "schedule": "Monday to Saturday, morning shift"}, {"name": "Dr. Usman Ali", "specialty": "Orthodontist (braces, aligners), BDS, FCPS", "schedule": "Tuesday, Thursday and Saturday, evening shift"}], "fees": {"consultation": "PKR 1,500", "services": [{"name": "Scaling and polishing (teeth cleaning)", "price": "PKR 4,000 - 6,000", "aliases": ["safai", "saaf"]}, {"name": "Filling", "price": "PKR 3,500 - 8,000 per tooth", "aliases": ["bharai", "bharwana"]}, {"name": "Root canal (RCT)", "price": "PKR 15,000 - 25,000 per tooth"}, {"name": "Tooth extraction", "price": "PKR 3,000 - 10,000", "aliases": ["nikalna", "nikalwana", "nikalwani", "nikalwane"]}, {"name": "Teeth whitening", "price": "PKR 20,000", "aliases": ["safaid", "white"]}, {"name": "Braces", "price": "Starting from PKR 120,000 (exact cost after orthodontist consultation)"}], "not_offered": ["Dental implants", "Home visits", "Treatment under general anaesthesia"]}, "appointments": {"policy": "Both walk-in and appointments. Appointment patients are seen first.", "collect": ["patient name", "preferred day", "preferred time", "doctor (if any)", "problem in one line"], "booking_window": "Up to 7 days in advance"}, "payment_methods": ["Cash", "JazzCash", "Easypaisa", "Bank transfer"], "other_info": ["Street parking available in front of the clinic.", "For a dental emergency outside timings, call Rescue 1122 or go to the nearest hospital emergency."], "language_style": "Reply in the same style the patient uses: Roman Urdu, Urdu script, or English. Default to friendly Roman Urdu.", "faqs": [{"q": "Do you treat children?", "a": "Yes, Dr. Ayesha Khan sees children aged 4 and above."}, {"q": "Is the clinic air-conditioned?", "a": "Yes."}]};
+  const STORAGE_KEY = "clinic-demo-requests:" + CLINIC.slug;
+  let state = {};
+
+  const chat = document.getElementById("chat");
+  const input = document.getElementById("input");
+  const send = document.getElementById("send");
+  const statusEl = document.getElementById("status");
+
+  document.getElementById("clinic-name").textContent = CLINIC.name;
+  document.getElementById("avatar").textContent = CLINIC.name.trim().charAt(0).toUpperCase();
+  document.title = CLINIC.name;
+
+  function now() {
+    return new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+
+  function escapeHtml(text) {
+    return text.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // WhatsApp-style *bold*, rendered safely (text is escaped first).
+  function format(text) {
+    return escapeHtml(text).replace(/\*([^*\n]+)\*/g, "<b>$1</b>");
+  }
+
+  function addMessage(text, who) {
+    const div = document.createElement("div");
+    div.className = "msg " + who;
+    div.innerHTML = format(text) + "<time>" + now() + "</time>";
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function addNotice(text) {
+    const div = document.createElement("div");
+    div.className = "notice";
+    div.textContent = text;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  // Saved requests live only in this browser; storage can be unavailable (private mode), so fail quietly.
+  function loadRequests() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch (e) { return memoryRequests; }
+  }
+  let memoryRequests = [];
+  function saveRequest(appt) {
+    const list = loadRequests();
+    list.unshift(Object.assign({ received: new Date().toLocaleString() }, appt));
+    memoryRequests = list;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list.slice(0, 50))); } catch (e) {}
+  }
+
+  function renderRequests() {
+    const box = document.getElementById("requests");
+    const list = loadRequests();
+    box.innerHTML = '<p class="intro">Yeh woh appointment requests hain jo receptionist ko WhatsApp par milti hain.</p>';
+    if (!list.length) {
+      box.innerHTML += '<p class="empty">Abhi koi request nahi.<br>Chat mein "5" likh kar appointment request bhejein.</p>';
+      return;
+    }
+    for (const r of list) {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML =
+        "<b>📋 " + escapeHtml(r.patient_name || "") + "</b>" +
+        "🗓️ " + escapeHtml(r.preferred_day || "") + " · " + escapeHtml(r.preferred_time || "") + "<br>" +
+        "👩‍⚕️ " + escapeHtml(r.doctor || "Any") + "<br>" +
+        "📝 " + escapeHtml(r.problem || "") + "<br>" +
+        '<span class="when">Received ' + escapeHtml(r.received) + " · Status: pending</span>";
+      box.appendChild(card);
+    }
+  }
+
+  function botReply(text, silent) {
+    text = text.trim();
+    if (!text || send.disabled) return;
+    if (!silent) addMessage(text, "out");
+    input.value = "";
+    send.disabled = true;
+    statusEl.textContent = "typing…";
+    const result = MenuBot.reply(CLINIC, state, text);
+    // A short pause so it feels like a real chat.
+    setTimeout(() => {
+      addMessage(result.reply, "in");
+      if (result.action === "appointment_request") {
+        saveRequest(result.appointment);
+        addNotice("📋 Appointment request saved — receptionist gets a WhatsApp alert");
+      } else if (result.action === "handoff") {
+        addNotice("🙋 Sent to clinic staff for a personal reply");
+      }
+      send.disabled = false;
+      statusEl.textContent = "online";
+    }, silent ? 0 : 600);
+  }
+
+  document.getElementById("form").addEventListener("submit", e => {
+    e.preventDefault();
+    botReply(input.value);
+  });
+  document.querySelectorAll("#chips button").forEach(b => b.addEventListener("click", () => botReply(b.textContent)));
+
+  document.getElementById("reset").addEventListener("click", () => {
+    state = {};
+    chat.innerHTML = "";
+    document.body.classList.remove("show-requests");
+    document.getElementById("toggle").textContent = "📋 Requests";
+    botReply("Assalam o Alaikum", true);
+  });
+
+  document.getElementById("toggle").addEventListener("click", () => {
+    const showing = document.body.classList.toggle("show-requests");
+    document.getElementById("toggle").textContent = showing ? "💬 Chat" : "📋 Requests";
+    if (showing) renderRequests();
+  });
+
+  botReply("Assalam o Alaikum", true);
+</script>
+</body>
+</html>
